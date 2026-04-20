@@ -3,6 +3,12 @@
 
 export type CrowdLevel = "low" | "mid" | "high";
 
+// 0..1 density per coach for finer-grained visualization
+export interface Coach {
+  level: CrowdLevel;
+  density: number; // 0..1
+}
+
 export interface MetroLine {
   id: string;
   name: string;
@@ -22,7 +28,8 @@ export interface Train {
   platform: number;
   status: "On Time" | "Delayed" | "Boarding";
   overallCrowd: CrowdLevel;
-  coaches: CrowdLevel[]; // length 12
+  overallDensity: number;
+  coaches: Coach[]; // length 12
 }
 
 export const LINES: MetroLine[] = [
@@ -76,58 +83,71 @@ function seeded(seed: number) {
   return () => (s = (s * 16807) % 2147483647) / 2147483647;
 }
 
-function pickCrowd(r: number): CrowdLevel {
-  if (r < 0.45) return "low";
-  if (r < 0.8) return "mid";
+function densityToLevel(d: number): CrowdLevel {
+  if (d < 0.4) return "low";
+  if (d < 0.72) return "mid";
   return "high";
 }
 
-function aggregate(coaches: CrowdLevel[]): CrowdLevel {
-  const score = coaches.reduce(
-    (a, c) => a + (c === "low" ? 0 : c === "mid" ? 1 : 2),
-    0,
-  );
-  const avg = score / coaches.length;
-  if (avg < 0.6) return "low";
-  if (avg < 1.25) return "mid";
-  return "high";
+function aggregate(coaches: Coach[]): { level: CrowdLevel; density: number } {
+  const avg = coaches.reduce((a, c) => a + c.density, 0) / coaches.length;
+  return { level: densityToLevel(avg), density: avg };
 }
 
-function fmt(mins: number) {
-  const h = Math.floor(mins / 60) % 24;
-  const m = mins % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
+// Each line gets a baseline density profile so trains feel different from each other
+const LINE_PROFILE: Record<string, number[]> = {
+  // 3-4 trains per line, varying base congestion
+  L1: [0.28, 0.55, 0.82, 0.45],   // Blue: includes a packed peak train
+  L2A: [0.35, 0.6, 0.78],         // Yellow: rising
+  L7: [0.42, 0.7, 0.55, 0.3],     // Red: mixed
+};
+
+const TRAIN_TIMES: Record<string, string[]> = {
+  L1: ["08:42", "09:06", "09:30", "09:54"],
+  L2A: ["08:48", "09:12", "09:36"],
+  L7: ["08:50", "09:14", "09:38", "10:02"],
+};
 
 export function generateTimetable(lineId: string): Train[] {
   const line = LINES.find((l) => l.id === lineId);
   if (!line) return [];
+  const profile = LINE_PROFILE[lineId] ?? [0.4, 0.6];
+  const times = TRAIN_TIMES[lineId] ?? ["09:00"];
   const trains: Train[] = [];
-  let seedBase = lineId.charCodeAt(1) * 31 + (lineId.charCodeAt(2) ?? 0);
+  const seedBase = lineId.charCodeAt(1) * 31 + (lineId.charCodeAt(2) ?? 0);
 
-  // Trains every 6 minutes from 06:00 to 23:00, alternating direction
-  let t = 6 * 60;
-  let i = 0;
-  while (t <= 23 * 60) {
-    const rand = seeded(seedBase + i * 7);
-    const coaches = Array.from({ length: 12 }, () => pickCrowd(rand()));
-    const overall = aggregate(coaches);
+  profile.forEach((base, i) => {
+    const rand = seeded(seedBase + i * 13 + 1);
+    // Per-coach density varies around the train's base, with peak in middle coaches
+    const coaches: Coach[] = Array.from({ length: 12 }, (_, idx) => {
+      // Bell-curve weighting: middle coaches busier than ends
+      const center = 5.5;
+      const peak = 1 - Math.abs(idx - center) / 8; // ~0.31..1
+      const noise = (rand() - 0.5) * 0.35;
+      const d = Math.max(0.05, Math.min(0.98, base * (0.6 + 0.6 * peak) + noise));
+      return { level: densityToLevel(d), density: d };
+    });
+    const agg = aggregate(coaches);
     const dirForward = i % 2 === 0;
     const travelMins = (line.stations.length - 1) * 2 + 4;
+    const [hh, mm] = times[i].split(":").map(Number);
+    const arrMins = hh * 60 + mm + travelMins;
+    const arrival = `${String(Math.floor(arrMins / 60) % 24).padStart(2, "0")}:${String(arrMins % 60).padStart(2, "0")}`;
+    const r = rand();
     trains.push({
-      id: `${lineId}-${String(i).padStart(3, "0")}`,
+      id: `${lineId}-${String(i + 1).padStart(2, "0")}`,
       lineId,
-      departure: fmt(t),
-      arrival: fmt(t + travelMins),
+      departure: times[i],
+      arrival,
       direction: `Towards ${dirForward ? line.to : line.from}`,
       platform: dirForward ? 1 : 2,
-      status: rand() < 0.08 ? "Delayed" : rand() < 0.18 ? "Boarding" : "On Time",
-      overallCrowd: overall,
+      status: r < 0.12 ? "Delayed" : r < 0.3 ? "Boarding" : "On Time",
+      overallCrowd: agg.level,
+      overallDensity: agg.density,
       coaches,
     });
-    t += 6;
-    i += 1;
-  }
+  });
+
   return trains;
 }
 
@@ -137,13 +157,13 @@ export function generateTimetable(lineId: string): Train[] {
 // TODO: Replace this stub with your OpenCV crowd-detection model output.
 //
 // Expected contract:
-//   Input:  trainId (e.g. "L1-042")
-//   Output: { coaches: CrowdLevel[] }   // length 12, one entry per coach
+//   Input:  trainId (e.g. "L1-01")
+//   Output: { coaches: Coach[] }   // length 12, density 0..1 per coach
 //
 // Suggested pipeline:
 //   1. Camera feeds per coach -> frame grab (YOLO/MobileNet person detection)
-//   2. Count people per coach, normalize by coach capacity
-//   3. Map density -> "low" | "mid" | "high"
+//   2. Count people per coach, normalize by coach capacity -> density 0..1
+//   3. Map density -> "low" | "mid" | "high" via densityToLevel()
 //   4. Push results to a server endpoint or websocket; this function reads cache
 //
 // Example wiring:
@@ -153,12 +173,10 @@ export function generateTimetable(lineId: string): Train[] {
 // ============================================================================
 export async function getCrowdData(
   trainId: string,
-  fallback: CrowdLevel[],
-): Promise<{ coaches: CrowdLevel[]; source: "mock" | "cv-model" }> {
-  // Returning mock for now. When your model is ready, swap this implementation.
-  return { coaches: fallback, source: "mock" };
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  fallback: Coach[],
+): Promise<{ coaches: Coach[] }> {
   void trainId;
+  return { coaches: fallback };
 }
 
 export const CROWD_LABEL: Record<CrowdLevel, string> = {

@@ -9,16 +9,6 @@ import {
 import { CrowdDot, CrowdBadge } from "./CrowdDot";
 import { CoachDiagram } from "./CoachDiagram";
 
-function nowMinutes() {
-  const d = new Date();
-  return d.getHours() * 60 + d.getMinutes();
-}
-
-function toMinutes(hhmm: string) {
-  const [h, m] = hhmm.split(":").map(Number);
-  return h * 60 + m;
-}
-
 export function MetroDashboard() {
   const [activeLineId, setActiveLineId] = useState(LINES[0].id);
   const [filter, setFilter] = useState<"all" | CrowdLevel>("all");
@@ -28,30 +18,28 @@ export function MetroDashboard() {
   const line = LINES.find((l) => l.id === activeLineId)!;
   const allTrains = useMemo(() => generateTimetable(activeLineId), [activeLineId]);
 
-  const upcoming = useMemo(() => {
-    const now = nowMinutes();
-    const list = allTrains.filter((t) => toMinutes(t.departure) >= now - 5);
-    return list.length > 0 ? list : allTrains;
-  }, [allTrains]);
-
   const filtered = useMemo(() => {
-    return upcoming.filter((t) => {
+    return allTrains.filter((t) => {
       if (filter !== "all" && t.overallCrowd !== filter) return false;
-      if (query && !t.direction.toLowerCase().includes(query.toLowerCase()) && !t.id.toLowerCase().includes(query.toLowerCase()))
+      if (
+        query &&
+        !t.direction.toLowerCase().includes(query.toLowerCase()) &&
+        !t.id.toLowerCase().includes(query.toLowerCase())
+      )
         return false;
       return true;
     });
-  }, [upcoming, filter, query]);
+  }, [allTrains, filter, query]);
 
   const stats = useMemo(() => {
-    return upcoming.slice(0, 20).reduce(
+    return allTrains.reduce(
       (acc, t) => {
         acc[t.overallCrowd] += 1;
         return acc;
       },
       { low: 0, mid: 0, high: 0 } as Record<CrowdLevel, number>,
     );
-  }, [upcoming]);
+  }, [allTrains]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -59,7 +47,10 @@ export function MetroDashboard() {
       <header className="border-b border-border bg-surface/80 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <div
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-primary-foreground"
+              style={{ backgroundColor: line.color }}
+            >
               <Activity className="h-4 w-4" />
             </div>
             <div>
@@ -71,12 +62,6 @@ export function MetroDashboard() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 rounded-full border border-border bg-surface-elevated px-3 py-1.5">
-            <span className="h-2 w-2 rounded-full bg-crowd-low pulse-dot" />
-            <span className="font-mono text-xs text-muted-foreground">
-              CV stream · standby
-            </span>
-          </div>
         </div>
       </header>
 
@@ -87,18 +72,14 @@ export function MetroDashboard() {
         <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-              {new Date().toLocaleDateString("en-IN", {
-                weekday: "long",
-                day: "numeric",
-                month: "short",
-              })}
+              Mumbai Metro · Lines 1 · 2A · 7
             </p>
             <h2 className="mt-1 font-display text-4xl font-semibold tracking-tight md:text-5xl">
               Timetable & Crowd Index
             </h2>
             <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-              Select a line, scan upcoming departures, and tap a train to inspect
-              per-coach occupancy resolved by the on-board CV pipeline.
+              Pick a line, scan today's departures, and tap a train to inspect
+              per-coach crowd density across the 12 coaches.
             </p>
           </div>
 
@@ -110,7 +91,7 @@ export function MetroDashboard() {
           </div>
         </div>
 
-        {/* Line selector */}
+        {/* Line selector with flag colors */}
         <div className="mb-6 grid gap-3 md:grid-cols-3">
           {LINES.map((l) => {
             const active = l.id === activeLineId;
@@ -123,19 +104,31 @@ export function MetroDashboard() {
                     ? "border-foreground bg-surface shadow-[var(--shadow-elevated)]"
                     : "border-border bg-surface hover:border-border-strong"
                 }`}
+                style={
+                  active
+                    ? { borderColor: l.color, boxShadow: `0 0 0 2px color-mix(in oklab, ${l.color} 25%, transparent)` }
+                    : undefined
+                }
               >
-                <div className="flex items-center justify-between">
+                {/* Flag color bar */}
+                <div
+                  className="absolute inset-x-0 top-0 h-1.5"
+                  style={{ backgroundColor: l.color }}
+                />
+                <div className="mt-2 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <span
-                      className="h-8 w-1.5 rounded-full"
+                      className="flex h-9 w-9 items-center justify-center rounded-md font-display text-xs font-bold text-white"
                       style={{ backgroundColor: l.color }}
-                    />
+                    >
+                      {l.shortName}
+                    </span>
                     <div>
                       <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                        {l.shortName}
+                        {l.name.split("—")[1]?.trim()}
                       </div>
                       <div className="font-display text-base font-semibold">
-                        {l.name.split("—")[1]?.trim() ?? l.name}
+                        {l.from} ↔ {l.to}
                       </div>
                     </div>
                   </div>
@@ -147,7 +140,7 @@ export function MetroDashboard() {
                 </div>
                 <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
                   <MapPin className="h-3 w-3" />
-                  {l.from} ↔ {l.to} · {l.stations.length} stations
+                  {l.stations.length} stations
                 </div>
               </button>
             );
@@ -184,8 +177,7 @@ export function MetroDashboard() {
 
         {/* Timetable */}
         <div className="overflow-hidden rounded-xl border border-border bg-surface">
-          {/* Table header */}
-          <div className="grid grid-cols-[80px_1fr_120px_100px_140px_40px] items-center gap-4 border-b border-border bg-surface-elevated px-5 py-3 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+          <div className="grid grid-cols-[80px_1fr_120px_100px_160px_40px] items-center gap-4 border-b border-border bg-surface-elevated px-5 py-3 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
             <span>Depart</span>
             <span>Direction</span>
             <span>Train</span>
@@ -200,25 +192,36 @@ export function MetroDashboard() {
             </div>
           ) : (
             <ul>
-              {filtered.slice(0, 30).map((t, idx) => {
+              {filtered.map((t, idx) => {
                 const isNext = idx === 0;
                 return (
                   <li key={t.id}>
                     <button
                       onClick={() => setSelectedTrain(t)}
-                      className="grid w-full grid-cols-[80px_1fr_120px_100px_140px_40px] items-center gap-4 border-b border-border px-5 py-4 text-left transition hover:bg-accent/50"
+                      className="grid w-full grid-cols-[80px_1fr_120px_100px_160px_40px] items-center gap-4 border-b border-border px-5 py-4 text-left transition hover:bg-accent/50"
                     >
                       <div className="flex items-center gap-2">
-                        <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="font-mono text-sm font-semibold tabular-nums">
-                          {t.departure}
-                        </span>
+                        <span
+                          className="h-8 w-1 rounded-full"
+                          style={{ backgroundColor: line.color }}
+                        />
+                        <div>
+                          <div className="flex items-center gap-1">
+                            <Clock className="h-3 w-3 text-muted-foreground" />
+                            <span className="font-mono text-sm font-semibold tabular-nums">
+                              {t.departure}
+                            </span>
+                          </div>
+                        </div>
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{t.direction}</span>
                           {isNext && (
-                            <span className="rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-primary">
+                            <span
+                              className="rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-white"
+                              style={{ backgroundColor: line.color }}
+                            >
                               Next
                             </span>
                           )}
@@ -245,6 +248,9 @@ export function MetroDashboard() {
                       <div className="flex items-center gap-2">
                         <CrowdDot level={t.overallCrowd} pulse={isNext} />
                         <CrowdBadge level={t.overallCrowd} />
+                        <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
+                          {Math.round(t.overallDensity * 100)}%
+                        </span>
                       </div>
                       <ChevronRight className="h-4 w-4 text-muted-foreground" />
                     </button>
@@ -253,19 +259,6 @@ export function MetroDashboard() {
               })}
             </ul>
           )}
-        </div>
-
-        {/* Footer note about CV integration */}
-        <div className="mt-6 rounded-xl border border-dashed border-border bg-surface-elevated p-4 text-xs text-muted-foreground">
-          <span className="font-mono uppercase tracking-widest text-foreground">
-            CV Hook ·
-          </span>{" "}
-          Coach occupancy is sourced from{" "}
-          <code className="rounded bg-muted px-1.5 py-0.5 font-mono">
-            getCrowdData(trainId)
-          </code>{" "}
-          in <code className="rounded bg-muted px-1.5 py-0.5 font-mono">src/lib/metro-data.ts</code>.
-          Replace the stub with your OpenCV pipeline output (12 levels per train).
         </div>
       </main>
 
