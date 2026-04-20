@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import {
   type Train,
   type CrowdLevel,
+  type Coach,
   type MetroLine,
   CROWD_LABEL,
   CROWD_DESCRIPTION,
@@ -30,18 +31,14 @@ export function CoachDiagram({
   line: MetroLine;
   onClose: () => void;
 }) {
-  const [coaches, setCoaches] = useState<CrowdLevel[]>(train.coaches);
-  const [source, setSource] = useState<"mock" | "cv-model">("mock");
+  const [coaches, setCoaches] = useState<Coach[]>(train.coaches);
   const [selected, setSelected] = useState<number>(0);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const data = await getCrowdData(train.id, train.coaches);
-      if (!cancelled) {
-        setCoaches(data.coaches);
-        setSource(data.source);
-      }
+      if (!cancelled) setCoaches(data.coaches);
     })();
     return () => {
       cancelled = true;
@@ -49,9 +46,11 @@ export function CoachDiagram({
   }, [train.id, train.coaches]);
 
   const counts = coaches.reduce(
-    (acc, c) => ({ ...acc, [c]: acc[c] + 1 }),
+    (acc, c) => ({ ...acc, [c.level]: acc[c.level] + 1 }),
     { low: 0, mid: 0, high: 0 } as Record<CrowdLevel, number>,
   );
+
+  const sel = coaches[selected];
 
   return (
     <div
@@ -59,19 +58,25 @@ export function CoachDiagram({
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-5xl overflow-hidden rounded-2xl border border-border bg-surface shadow-elevated"
+        className="relative w-full max-w-5xl overflow-hidden rounded-2xl border border-border bg-surface"
         style={{ boxShadow: "var(--shadow-elevated)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
+        {/* Header — line color stripe */}
+        <div
+          className="h-1.5 w-full"
+          style={{ backgroundColor: line.color }}
+        />
         <div className="flex items-start justify-between border-b border-border bg-surface-elevated p-6">
           <div className="space-y-1">
             <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-muted-foreground">
               <span
-                className="inline-block h-2 w-6 rounded-sm"
+                className="inline-flex h-5 items-center rounded-sm px-2 font-bold text-white"
                 style={{ backgroundColor: line.color }}
-              />
-              {line.shortName} · Train {train.id}
+              >
+                {line.shortName}
+              </span>
+              Train {train.id}
             </div>
             <h2 className="font-display text-2xl font-semibold tracking-tight">
               {train.direction}
@@ -98,74 +103,47 @@ export function CoachDiagram({
                 12-Coach Layout
               </h3>
               <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-                {source === "cv-model" ? "● Live CV feed" : "○ Mock data"}
+                Train density {Math.round(train.overallDensity * 100)}%
               </span>
             </div>
 
             <div className="rounded-xl border border-border bg-surface-elevated p-5">
-              {/* Direction marker */}
               <div className="mb-4 flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                <span>← {train.direction.replace("Towards ", "")}</span>
-                <span>Front of train</span>
+                <span>Front · {train.direction.replace("Towards ", "")} →</span>
+                <span>Rear</span>
               </div>
 
-              {/* Coaches */}
-              <div className="flex items-stretch gap-1.5 overflow-x-auto pb-2">
-                {/* Locomotive nose */}
-                <div
-                  className="flex-shrink-0 rounded-l-2xl border border-border bg-surface"
-                  style={{ width: 18 }}
-                />
-                {coaches.map((level, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setSelected(idx)}
-                    className={`group relative flex h-24 min-w-[58px] flex-1 flex-col items-center justify-between rounded-md border-2 p-2 transition-all ${
-                      selected === idx
-                        ? "scale-[1.04]"
-                        : "hover:scale-[1.02]"
-                    }`}
-                    style={{
-                      backgroundColor: COACH_SOFT[level],
-                      borderColor:
-                        selected === idx ? COACH_FILL[level] : "transparent",
-                    }}
-                  >
-                    {/* Window strip */}
-                    <div
-                      className="h-1 w-full rounded-full opacity-70"
-                      style={{ backgroundColor: COACH_FILL[level] }}
-                    />
-                    <div className="flex flex-col items-center">
-                      <span
-                        className="font-display text-lg font-bold leading-none"
-                        style={{ color: COACH_FILL[level] }}
-                      >
-                        {idx + 1}
-                      </span>
-                      <span className="mt-1 font-mono text-[9px] uppercase text-muted-foreground">
-                        {idx === 0 || idx === 11 ? "LDS" : idx === 5 ? "♀" : "GEN"}
-                      </span>
-                    </div>
-                    <div
-                      className="h-1 w-full rounded-full opacity-70"
-                      style={{ backgroundColor: COACH_FILL[level] }}
-                    />
-                  </button>
-                ))}
-                <div
-                  className="flex-shrink-0 rounded-r-2xl border border-border bg-surface"
-                  style={{ width: 18 }}
-                />
-              </div>
+              {/* Metro train shape */}
+              <div className="relative">
+                <div className="flex items-stretch overflow-x-auto pb-1">
+                  {/* Locomotive nose (front) */}
+                  <Locomotive lineColor={line.color} side="front" />
 
-              {/* Track */}
-              <div className="mt-2 flex items-center gap-1">
-                <div className="h-px flex-1 bg-border-strong" />
-                <span className="font-mono text-[10px] text-muted-foreground">
-                  ═══ TRACK ═══
-                </span>
-                <div className="h-px flex-1 bg-border-strong" />
+                  {coaches.map((c, idx) => (
+                    <CoachCar
+                      key={idx}
+                      idx={idx}
+                      coach={c}
+                      lineColor={line.color}
+                      selected={selected === idx}
+                      onSelect={() => setSelected(idx)}
+                    />
+                  ))}
+
+                  {/* Locomotive tail */}
+                  <Locomotive lineColor={line.color} side="rear" />
+                </div>
+
+                {/* Track + sleepers */}
+                <div className="mt-1 flex items-center gap-[3px] overflow-hidden">
+                  {Array.from({ length: 80 }).map((_, i) => (
+                    <span
+                      key={i}
+                      className="h-1.5 w-2 flex-shrink-0 rounded-sm bg-border-strong"
+                    />
+                  ))}
+                </div>
+                <div className="mt-0.5 h-px w-full bg-border-strong" />
               </div>
             </div>
 
@@ -187,28 +165,45 @@ export function CoachDiagram({
               Coach {selected + 1} of 12
             </div>
             <div className="mt-2 mb-4">
-              <CrowdBadge level={coaches[selected]} />
+              <CrowdBadge level={sel.level} />
             </div>
             <h4 className="font-display text-lg font-semibold">
-              {CROWD_LABEL[coaches[selected]]}
+              {CROWD_LABEL[sel.level]}
             </h4>
             <p className="mt-1 text-sm text-muted-foreground">
-              {CROWD_DESCRIPTION[coaches[selected]]}
+              {CROWD_DESCRIPTION[sel.level]}
             </p>
+
+            {/* Density bar */}
+            <div className="mt-4">
+              <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                <span>Density</span>
+                <span className="tabular-nums text-foreground">
+                  {Math.round(sel.density * 100)}%
+                </span>
+              </div>
+              <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${Math.round(sel.density * 100)}%`,
+                    backgroundColor: COACH_FILL[sel.level],
+                  }}
+                />
+              </div>
+            </div>
 
             <div className="mt-5 space-y-2 border-t border-border pt-4">
               <DetailRow label="Coach type">
                 {selected === 0 || selected === 11
                   ? "Ladies (LDS)"
-                  : selected === 5
-                    ? "Reserved"
-                    : "General"}
+                  : "General"}
               </DetailRow>
               <DetailRow label="Capacity">~ 380 pax</DetailRow>
               <DetailRow label="Recommended">
-                {coaches[selected] === "low"
+                {sel.level === "low"
                   ? "Best choice"
-                  : coaches[selected] === "mid"
+                  : sel.level === "mid"
                     ? "Acceptable"
                     : "Try another coach"}
               </DetailRow>
@@ -216,6 +211,122 @@ export function CoachDiagram({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function CoachCar({
+  idx,
+  coach,
+  lineColor,
+  selected,
+  onSelect,
+}: {
+  idx: number;
+  coach: Coach;
+  lineColor: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const isLadies = idx === 0 || idx === 11;
+  return (
+    <button
+      onClick={onSelect}
+      className={`group relative mx-[2px] flex h-28 w-[64px] flex-shrink-0 flex-col justify-between border-y-2 p-1.5 transition-all ${
+        selected ? "scale-[1.06] z-10" : "hover:scale-[1.02]"
+      }`}
+      style={{
+        backgroundColor: COACH_SOFT[coach.level],
+        borderColor: selected ? COACH_FILL[coach.level] : lineColor,
+        boxShadow: selected ? `0 6px 16px -6px ${COACH_FILL[coach.level]}` : undefined,
+      }}
+    >
+      {/* Roof line */}
+      <div
+        className="absolute inset-x-0 -top-[3px] h-[3px]"
+        style={{ backgroundColor: lineColor }}
+      />
+      {/* Bottom skirt */}
+      <div
+        className="absolute inset-x-0 -bottom-[3px] h-[3px]"
+        style={{ backgroundColor: lineColor, opacity: 0.6 }}
+      />
+
+      {/* Window strip */}
+      <div className="flex h-3 items-center gap-[2px]">
+        {Array.from({ length: 4 }).map((_, w) => (
+          <span
+            key={w}
+            className="h-full flex-1 rounded-[2px] border"
+            style={{
+              backgroundColor: COACH_FILL[coach.level],
+              borderColor: lineColor,
+              opacity: 0.55 + 0.45 * coach.density,
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Door + number */}
+      <div className="flex flex-col items-center justify-center">
+        <span
+          className="font-display text-base font-bold leading-none"
+          style={{ color: COACH_FILL[coach.level] }}
+        >
+          {idx + 1}
+        </span>
+        <span className="mt-0.5 font-mono text-[8px] uppercase tracking-wider text-muted-foreground">
+          {isLadies ? "LDS" : "GEN"}
+        </span>
+        <span className="mt-0.5 font-mono text-[8px] tabular-nums text-foreground/70">
+          {Math.round(coach.density * 100)}%
+        </span>
+      </div>
+
+      {/* Door slits */}
+      <div className="flex justify-around">
+        <span className="h-2 w-1.5 rounded-sm" style={{ backgroundColor: lineColor, opacity: 0.5 }} />
+        <span className="h-2 w-1.5 rounded-sm" style={{ backgroundColor: lineColor, opacity: 0.5 }} />
+      </div>
+
+      {/* Wheels */}
+      <div className="absolute -bottom-[7px] left-1.5 h-2 w-2 rounded-full bg-foreground/70" />
+      <div className="absolute -bottom-[7px] right-1.5 h-2 w-2 rounded-full bg-foreground/70" />
+    </button>
+  );
+}
+
+function Locomotive({ lineColor, side }: { lineColor: string; side: "front" | "rear" }) {
+  const radius = side === "front"
+    ? "rounded-l-[28px] rounded-r-md"
+    : "rounded-r-[28px] rounded-l-md";
+  return (
+    <div className="relative flex-shrink-0" style={{ width: 44 }}>
+      <div
+        className={`relative h-28 ${radius} border-y-2`}
+        style={{
+          backgroundColor: lineColor,
+          borderColor: lineColor,
+        }}
+      >
+        {/* Headlight / windshield */}
+        <div
+          className={`absolute top-3 ${
+            side === "front" ? "left-2" : "right-2"
+          } h-5 w-7 rounded-md bg-white/85`}
+        />
+        {/* Body stripe */}
+        <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 bg-white/40" />
+        {/* Coupler */}
+        <div
+          className={`absolute top-1/2 h-2 w-2 -translate-y-1/2 rounded-sm bg-foreground/60 ${
+            side === "front" ? "right-[-4px]" : "left-[-4px]"
+          }`}
+        />
+      </div>
+      {/* Wheels */}
+      <div className="absolute -bottom-[7px] left-2 h-2 w-2 rounded-full bg-foreground/70" />
+      <div className="absolute -bottom-[7px] right-2 h-2 w-2 rounded-full bg-foreground/70" />
     </div>
   );
 }

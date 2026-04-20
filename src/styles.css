@@ -90,10 +90,10 @@
   --crowd-high: oklch(0.62 0.22 25);          /* red */
   --crowd-high-soft: oklch(0.95 0.05 25);
 
-  /* Mumbai Metro line colors (official-ish) */
-  --line-1: oklch(0.65 0.2 30);               /* Blue Line 1 — actually blue, but using brand red/orange */
-  --line-2a: oklch(0.65 0.18 150);            /* Yellow/Green */
-  --line-7: oklch(0.55 0.18 255);             /* Red — using blue for differentiation */
+  /* Mumbai Metro line colors — true to flag */
+  --line-1: oklch(0.55 0.2 255);              /* Blue Line */
+  --line-2a: oklch(0.82 0.17 95);             /* Yellow Line */
+  --line-7: oklch(0.6 0.23 27);               /* Red Line */
 
   --shadow-soft: 0 1px 2px 0 oklch(0.18 0.03 260 / 0.04), 0 1px 3px 0 oklch(0.18 0.03 260 / 0.06);
   --shadow-elevated: 0 4px 12px -2px oklch(0.18 0.03 260 / 0.08), 0 2px 6px -2px oklch(0.18 0.03 260 / 0.06);
