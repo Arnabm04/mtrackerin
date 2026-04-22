@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Activity, ChevronRight, Clock, MapPin, Search } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Activity, ChevronRight, Clock, MapPin, Navigation, Search } from "lucide-react";
 import {
   LINES,
   generateTimetable,
@@ -8,19 +8,30 @@ import {
 } from "@/lib/metro-data";
 import { CrowdDot, CrowdBadge } from "./CrowdDot";
 import { CoachDiagram } from "./CoachDiagram";
+import { StationsView } from "./StationsView";
 
 export function MetroDashboard() {
   const [activeLineId, setActiveLineId] = useState(LINES[0].id);
   const [filter, setFilter] = useState<"all" | CrowdLevel>("all");
   const [query, setQuery] = useState("");
-  const [selectedTrain, setSelectedTrain] = useState<Train | null>(null);
+  const [stationsTrain, setStationsTrain] = useState<Train | null>(null);
+  const [crowdTrain, setCrowdTrain] = useState<Train | null>(null);
+  // Direction = terminal station the user wants to travel toward.
+  // null means "Both directions".
+  const [direction, setDirection] = useState<string | null>(null);
 
   const line = LINES.find((l) => l.id === activeLineId)!;
   const allTrains = useMemo(() => generateTimetable(activeLineId), [activeLineId]);
 
+  // Reset direction when switching lines (terminals change)
+  useEffect(() => {
+    setDirection(null);
+  }, [activeLineId]);
+
   const filtered = useMemo(() => {
     return allTrains.filter((t) => {
       if (filter !== "all" && t.overallCrowd !== filter) return false;
+      if (direction && t.destination !== direction) return false;
       if (
         query &&
         !t.direction.toLowerCase().includes(query.toLowerCase()) &&
@@ -29,7 +40,7 @@ export function MetroDashboard() {
         return false;
       return true;
     });
-  }, [allTrains, filter, query]);
+  }, [allTrains, filter, query, direction]);
 
   const stats = useMemo(() => {
     return allTrains.reduce(
@@ -147,6 +158,34 @@ export function MetroDashboard() {
           })}
         </div>
 
+        {/* Direction selector — pick destination terminal */}
+        <div className="mb-4 rounded-xl border border-border bg-surface p-3">
+          <div className="mb-2 flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            <Navigation className="h-3 w-3" />
+            Travelling toward
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <DirectionPill
+              label="Both directions"
+              active={direction === null}
+              onClick={() => setDirection(null)}
+              color={line.color}
+            />
+            <DirectionPill
+              label={`Towards ${line.to}`}
+              active={direction === line.to}
+              onClick={() => setDirection(line.to)}
+              color={line.color}
+            />
+            <DirectionPill
+              label={`Towards ${line.from}`}
+              active={direction === line.from}
+              onClick={() => setDirection(line.from)}
+              color={line.color}
+            />
+          </div>
+        </div>
+
         {/* Filters */}
         <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-surface p-2">
           <div className="flex flex-1 items-center gap-2 px-2">
@@ -154,7 +193,7 @@ export function MetroDashboard() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by direction or train ID…"
+              placeholder="Search by station, direction or train ID…"
               className="w-full bg-transparent py-1.5 text-sm outline-none placeholder:text-muted-foreground"
             />
           </div>
@@ -197,7 +236,7 @@ export function MetroDashboard() {
                 return (
                   <li key={t.id}>
                     <button
-                      onClick={() => setSelectedTrain(t)}
+                      onClick={() => setStationsTrain(t)}
                       className="grid w-full grid-cols-[80px_1fr_120px_100px_160px_40px] items-center gap-4 border-b border-border px-5 py-4 text-left transition hover:bg-accent/50"
                     >
                       <div className="flex items-center gap-2">
@@ -262,14 +301,60 @@ export function MetroDashboard() {
         </div>
       </main>
 
-      {selectedTrain && (
-        <CoachDiagram
-          train={selectedTrain}
+      {stationsTrain && !crowdTrain && (
+        <StationsView
+          train={stationsTrain}
           line={line}
-          onClose={() => setSelectedTrain(null)}
+          onClose={() => setStationsTrain(null)}
+          onOpenCrowd={() => setCrowdTrain(stationsTrain)}
+        />
+      )}
+
+      {crowdTrain && (
+        <CoachDiagram
+          train={crowdTrain}
+          line={line}
+          onClose={() => {
+            setCrowdTrain(null);
+            // Returning from crowd view drops back to the stations view
+          }}
         />
       )}
     </div>
+  );
+}
+
+function DirectionPill({
+  label,
+  active,
+  onClick,
+  color,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  color: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+        active
+          ? "text-white"
+          : "border-border bg-surface text-muted-foreground hover:text-foreground"
+      }`}
+      style={
+        active
+          ? { backgroundColor: color, borderColor: color }
+          : undefined
+      }
+    >
+      <span
+        className="h-1.5 w-1.5 rounded-full"
+        style={{ backgroundColor: active ? "white" : color }}
+      />
+      {label}
+    </button>
   );
 }
 
