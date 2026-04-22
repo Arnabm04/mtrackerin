@@ -281,3 +281,21 @@ export const CROWD_DESCRIPTION: Record<CrowdLevel, string> = {
   mid: "Most seats taken, comfortable standing room.",
   high: "Standing only, limited space near doors.",
 };
+
+// Format density (0..~1.25) as a percent string.
+// Never returns NaN; values >100% are shown verbatim (e.g. "112%").
+export function formatDensity(d: number | null | undefined): string {
+  if (d === null || d === undefined || Number.isNaN(d)) return "0%";
+  const pct = Math.max(0, Math.round(d * 100));
+  return `${pct}%`;
+}
+
+// Format ETA distance: "Now" / "1 min" / "12 min" / "Departed"
+export function formatEta(mins: number | null | undefined): string {
+  if (mins === null || mins === undefined || Number.isNaN(mins)) return "—";
+  const m = Math.round(mins);
+  if (m <= -2) return "Departed";
+  if (m <= 0) return "Now";
+  if (m === 1) return "1 min";
+  return `${m} min`;
+}
