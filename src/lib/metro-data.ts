@@ -184,7 +184,8 @@ export function generateTimetable(lineId: string): Train[] {
       const w = shapeWeight(prof.shape, idx, 12);
       const noise = (rand() - 0.5) * prof.noise;
       const raw = prof.base + (w - 0.4) * prof.amp + noise;
-      const d = Math.max(0.05, Math.min(prof.cap, raw));
+      // Floor at 12% so a coach never reads as visually empty / "0%"
+      const d = Math.max(0.12, Math.min(prof.cap, raw));
       return { level: densityToLevel(Math.min(1, d)), density: d };
     });
     const agg = aggregate(coaches);
