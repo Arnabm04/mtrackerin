@@ -113,12 +113,12 @@ interface TrainProfile {
 }
 
 const TRAIN_PROFILES: Record<string, TrainProfile[]> = {
-  // Line 1 — Blue: 4 trains, very mixed
+  // Line 1 — Blue: 4 trains, mixed but mostly comfy/moderate
   L1: [
-    { base: 0.28, shape: "even",  amp: 0.18, noise: 0.18, cap: 0.95 },
-    { base: 0.55, shape: "front", amp: 0.40, noise: 0.20, cap: 1.05 },
-    { base: 0.82, shape: "bell",  amp: 0.35, noise: 0.18, cap: 1.20 }, // packed peak
-    { base: 0.45, shape: "rear",  amp: 0.35, noise: 0.22, cap: 1.00 },
+    { base: 0.34, shape: "even",  amp: 0.16, noise: 0.14, cap: 0.95 }, // comfortable
+    { base: 0.52, shape: "front", amp: 0.30, noise: 0.16, cap: 0.98 }, // moderate
+    { base: 0.46, shape: "bell",  amp: 0.28, noise: 0.16, cap: 0.95 }, // moderate
+    { base: 0.68, shape: "rear",  amp: 0.30, noise: 0.16, cap: 1.05 }, // busier (one crowded)
   ],
   // Line 2A — Yellow: 3 trains, rising
   L2A: [
@@ -126,12 +126,12 @@ const TRAIN_PROFILES: Record<string, TrainProfile[]> = {
     { base: 0.60, shape: "split", amp: 0.35, noise: 0.20, cap: 1.10 },
     { base: 0.80, shape: "front", amp: 0.32, noise: 0.18, cap: 1.18 },
   ],
-  // Line 7 — Red: 4 trains, mixed
+  // Line 7 — Red: 4 trains, mostly comfy/moderate with one crowded
   L7: [
-    { base: 0.40, shape: "rear",  amp: 0.32, noise: 0.22, cap: 1.00 },
-    { base: 0.72, shape: "bell",  amp: 0.40, noise: 0.18, cap: 1.15 },
-    { base: 0.55, shape: "split", amp: 0.30, noise: 0.22, cap: 1.05 },
-    { base: 0.30, shape: "even",  amp: 0.18, noise: 0.20, cap: 0.92 },
+    { base: 0.38, shape: "rear",  amp: 0.22, noise: 0.16, cap: 0.95 }, // comfortable
+    { base: 0.50, shape: "bell",  amp: 0.28, noise: 0.16, cap: 0.98 }, // moderate
+    { base: 0.72, shape: "split", amp: 0.32, noise: 0.18, cap: 1.10 }, // crowded
+    { base: 0.36, shape: "even",  amp: 0.18, noise: 0.14, cap: 0.92 }, // comfortable
   ],
 };
 
@@ -184,7 +184,8 @@ export function generateTimetable(lineId: string): Train[] {
       const w = shapeWeight(prof.shape, idx, 12);
       const noise = (rand() - 0.5) * prof.noise;
       const raw = prof.base + (w - 0.4) * prof.amp + noise;
-      const d = Math.max(0.05, Math.min(prof.cap, raw));
+      // Floor at 12% so a coach never reads as visually empty / "0%"
+      const d = Math.max(0.12, Math.min(prof.cap, raw));
       return { level: densityToLevel(Math.min(1, d)), density: d };
     });
     const agg = aggregate(coaches);
