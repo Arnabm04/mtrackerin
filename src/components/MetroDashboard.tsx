@@ -5,6 +5,7 @@ import {
   generateTimetable,
   type Train,
   type CrowdLevel,
+  formatDensity,
 } from "@/lib/metro-data";
 import { CrowdDot, CrowdBadge } from "./CrowdDot";
 import { CoachDiagram } from "./CoachDiagram";
@@ -288,7 +289,7 @@ export function MetroDashboard() {
                         <CrowdDot level={t.overallCrowd} pulse={isNext} />
                         <CrowdBadge level={t.overallCrowd} />
                         <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
-                          {Math.round(t.overallDensity * 100)}%
+                          {formatDensity(t.overallDensity)}
                         </span>
                       </div>
                       <ChevronRight className="h-4 w-4 text-muted-foreground" />

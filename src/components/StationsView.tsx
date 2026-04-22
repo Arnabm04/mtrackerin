@@ -1,5 +1,5 @@
 import { ArrowRight, Train as TrainIcon, X } from "lucide-react";
-import { type Train, type MetroLine } from "@/lib/metro-data";
+import { type Train, type MetroLine, formatDensity, formatEta } from "@/lib/metro-data";
 import { CrowdBadge, CrowdDot } from "./CrowdDot";
 
 export function StationsView({
@@ -18,6 +18,8 @@ export function StationsView({
   const stations = forward ? line.stations : [...line.stations].reverse();
   const currentIdx = train.currentStationIndex;
   const nextIdx = Math.min(currentIdx + 1, stations.length - 1);
+  const etas = train.stationEtas;
+  const minsTo = train.minutesToStation;
 
   return (
     <div
@@ -155,9 +157,31 @@ export function StationsView({
                         {idx === 0 ? "Origin" : idx === stations.length - 1 ? "Terminal" : `Stop ${idx + 1}`}
                       </div>
                     </div>
-                    {idx === stations.length - 1 && (
-                      <span className="font-mono text-xs text-muted-foreground">{train.arrival}</span>
-                    )}
+                    {/* ETA column */}
+                    <div className="flex flex-col items-end">
+                      <span
+                        className={`font-mono text-sm tabular-nums ${
+                          passed
+                            ? "text-muted-foreground line-through decoration-1"
+                            : isCurrent
+                              ? "font-semibold"
+                              : "text-foreground"
+                        }`}
+                      >
+                        {etas[idx] ?? "—"}
+                      </span>
+                      <span
+                        className={`mt-0.5 font-mono text-[10px] uppercase tracking-wider ${
+                          isCurrent
+                            ? "text-foreground"
+                            : passed
+                              ? "text-muted-foreground/60"
+                              : "text-muted-foreground"
+                        }`}
+                      >
+                        {passed ? "Departed" : formatEta(minsTo[idx])}
+                      </span>
+                    </div>
                   </div>
                 </li>
               );
@@ -172,7 +196,7 @@ export function StationsView({
             <div>
               <div className="font-display text-sm font-semibold">Train crowd index</div>
               <div className="text-xs text-muted-foreground">
-                Inspect per-coach density across all 12 coaches
+                Overall {formatDensity(train.overallDensity)} · per-coach detail across all 12 coaches
               </div>
             </div>
             <div className="ml-2">

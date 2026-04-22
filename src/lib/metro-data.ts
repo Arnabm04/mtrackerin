@@ -32,6 +32,10 @@ export interface Train {
   overallCrowd: CrowdLevel;
   overallDensity: number;
   coaches: Coach[]; // length 12
+  // ETA per stop (HH:mm) in the train's travel direction; length === stations.length
+  stationEtas: string[];
+  // Minutes from "now" to each station; negative = passed; same length as stations
+  minutesToStation: number[];
 }
 
 export const LINES: MetroLine[] = [
@@ -92,17 +96,56 @@ function densityToLevel(d: number): CrowdLevel {
 }
 
 function aggregate(coaches: Coach[]): { level: CrowdLevel; density: number } {
-  const avg = coaches.reduce((a, c) => a + c.density, 0) / coaches.length;
-  return { level: densityToLevel(avg), density: avg };
+  const sum = coaches.reduce((a, c) => a + c.density, 0);
+  const avg = coaches.length > 0 ? sum / coaches.length : 0;
+  // For overall level, cap at 1 so an over-capacity train still maps cleanly to "high"
+  return { level: densityToLevel(Math.min(1, avg)), density: avg };
 }
 
-// Each line gets a baseline density profile so trains feel different from each other
-const LINE_PROFILE: Record<string, number[]> = {
-  // 3-4 trains per line, varying base congestion
-  L1: [0.28, 0.55, 0.82, 0.45],   // Blue: includes a packed peak train
-  L2A: [0.35, 0.6, 0.78],         // Yellow: rising
-  L7: [0.42, 0.7, 0.55, 0.3],     // Red: mixed
+// Per-train shape profile so each train looks meaningfully different
+type Shape = "bell" | "front" | "rear" | "even" | "split";
+interface TrainProfile {
+  base: number;   // baseline density
+  shape: Shape;
+  amp: number;    // shape amplitude
+  noise: number;  // jitter
+  cap: number;    // upper clamp; >1 means coach can be over-capacity
+}
+
+const TRAIN_PROFILES: Record<string, TrainProfile[]> = {
+  // Line 1 — Blue: 4 trains, very mixed
+  L1: [
+    { base: 0.28, shape: "even",  amp: 0.18, noise: 0.18, cap: 0.95 },
+    { base: 0.55, shape: "front", amp: 0.40, noise: 0.20, cap: 1.05 },
+    { base: 0.82, shape: "bell",  amp: 0.35, noise: 0.18, cap: 1.20 }, // packed peak
+    { base: 0.45, shape: "rear",  amp: 0.35, noise: 0.22, cap: 1.00 },
+  ],
+  // Line 2A — Yellow: 3 trains, rising
+  L2A: [
+    { base: 0.32, shape: "bell",  amp: 0.30, noise: 0.20, cap: 0.95 },
+    { base: 0.60, shape: "split", amp: 0.35, noise: 0.20, cap: 1.10 },
+    { base: 0.80, shape: "front", amp: 0.32, noise: 0.18, cap: 1.18 },
+  ],
+  // Line 7 — Red: 4 trains, mixed
+  L7: [
+    { base: 0.40, shape: "rear",  amp: 0.32, noise: 0.22, cap: 1.00 },
+    { base: 0.72, shape: "bell",  amp: 0.40, noise: 0.18, cap: 1.15 },
+    { base: 0.55, shape: "split", amp: 0.30, noise: 0.22, cap: 1.05 },
+    { base: 0.30, shape: "even",  amp: 0.18, noise: 0.20, cap: 0.92 },
+  ],
 };
+
+function shapeWeight(shape: Shape, idx: number, n: number): number {
+  const t = idx / (n - 1); // 0..1 along train
+  switch (shape) {
+    case "bell":  return 1 - Math.abs(t - 0.5) * 2;
+    case "front": return 1 - t;
+    case "rear":  return t;
+    case "split": return Math.abs(t - 0.5) * 2;
+    case "even":
+    default:      return 0.5;
+  }
+}
 
 const TRAIN_TIMES: Record<string, string[]> = {
   L1: ["08:42", "09:06", "09:30", "09:54"],
@@ -110,35 +153,74 @@ const TRAIN_TIMES: Record<string, string[]> = {
   L7: ["08:50", "09:14", "09:38", "10:02"],
 };
 
+// Per-segment travel minutes between consecutive stations
+function segmentMinutes(_lineId: string, segIdx: number): number {
+  const base = 2;
+  if (segIdx % 7 === 0) return base + 1;
+  if (segIdx % 4 === 0) return base + 1;
+  if (segIdx % 5 === 0) return Math.max(1, base - 1);
+  return base;
+}
+const DWELL_MIN = 0.5;
+function fmtClock(totalMins: number): string {
+  const m = ((Math.round(totalMins) % (24 * 60)) + 24 * 60) % (24 * 60);
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+}
+
 export function generateTimetable(lineId: string): Train[] {
   const line = LINES.find((l) => l.id === lineId);
   if (!line) return [];
-  const profile = LINE_PROFILE[lineId] ?? [0.4, 0.6];
+  const profiles =
+    TRAIN_PROFILES[lineId] ??
+    ([{ base: 0.4, shape: "bell", amp: 0.3, noise: 0.2, cap: 1 }] as TrainProfile[]);
   const times = TRAIN_TIMES[lineId] ?? ["09:00"];
   const trains: Train[] = [];
   const seedBase = lineId.charCodeAt(1) * 31 + (lineId.charCodeAt(2) ?? 0);
 
-  profile.forEach((base, i) => {
+  profiles.forEach((prof, i) => {
     const rand = seeded(seedBase + i * 13 + 1);
-    // Per-coach density varies around the train's base, with peak in middle coaches
+    // Per-coach density driven by the train's profile shape
     const coaches: Coach[] = Array.from({ length: 12 }, (_, idx) => {
-      // Bell-curve weighting: middle coaches busier than ends
-      const center = 5.5;
-      const peak = 1 - Math.abs(idx - center) / 8; // ~0.31..1
-      const noise = (rand() - 0.5) * 0.35;
-      const d = Math.max(0.05, Math.min(0.98, base * (0.6 + 0.6 * peak) + noise));
-      return { level: densityToLevel(d), density: d };
+      const w = shapeWeight(prof.shape, idx, 12);
+      const noise = (rand() - 0.5) * prof.noise;
+      const raw = prof.base + (w - 0.4) * prof.amp + noise;
+      const d = Math.max(0.05, Math.min(prof.cap, raw));
+      return { level: densityToLevel(Math.min(1, d)), density: d };
     });
     const agg = aggregate(coaches);
     const dirForward = i % 2 === 0;
-    const travelMins = (line.stations.length - 1) * 2 + 4;
+    // Per-station ETAs along the train's natural (forward) direction
     const [hh, mm] = times[i].split(":").map(Number);
-    const arrMins = hh * 60 + mm + travelMins;
-    const arrival = `${String(Math.floor(arrMins / 60) % 24).padStart(2, "0")}:${String(arrMins % 60).padStart(2, "0")}`;
+    const departMins = hh * 60 + mm;
+    const fwdEtas: string[] = [];
+    let acc = departMins;
+    for (let s = 0; s < line.stations.length; s++) {
+      fwdEtas.push(fmtClock(acc));
+      if (s < line.stations.length - 1) {
+        acc += segmentMinutes(lineId, s) + DWELL_MIN;
+      }
+    }
+    const arrival = fwdEtas[fwdEtas.length - 1];
+    // Simulate "now" so the train sits mid-route
+    const nowOffset = Math.floor(rand() * 14) + 6;
+    const nowMins = departMins + nowOffset;
+    const fwdMinutesToStation = fwdEtas.map((eta) => {
+      const [eh, em] = eta.split(":").map(Number);
+      return eh * 60 + em - nowMins;
+    });
     const r = rand();
     const destination = dirForward ? line.to : line.from;
-    // Pick a deterministic "current station" along the route (train mid-trip feel)
-    const currentStationIndex = Math.floor(rand() * (line.stations.length - 2)) + 1;
+    const stationEtas = dirForward ? fwdEtas : [...fwdEtas].reverse();
+    const minutesToStation = dirForward
+      ? fwdMinutesToStation
+      : [...fwdMinutesToStation].reverse();
+    // Current station = last index already reached (mins <= 0); clamp so a next stop exists
+    let currentStationIndex = 0;
+    for (let s = 0; s < minutesToStation.length; s++) {
+      if (minutesToStation[s] <= 0) currentStationIndex = s;
+      else break;
+    }
+    currentStationIndex = Math.min(currentStationIndex, line.stations.length - 2);
     trains.push({
       id: `${lineId}-${String(i + 1).padStart(2, "0")}`,
       lineId,
@@ -152,6 +234,8 @@ export function generateTimetable(lineId: string): Train[] {
       overallCrowd: agg.level,
       overallDensity: agg.density,
       coaches,
+      stationEtas,
+      minutesToStation,
     });
   });
 
@@ -197,3 +281,21 @@ export const CROWD_DESCRIPTION: Record<CrowdLevel, string> = {
   mid: "Most seats taken, comfortable standing room.",
   high: "Standing only, limited space near doors.",
 };
+
+// Format density (0..~1.25) as a percent string.
+// Never returns NaN; values >100% are shown verbatim (e.g. "112%").
+export function formatDensity(d: number | null | undefined): string {
+  if (d === null || d === undefined || Number.isNaN(d)) return "0%";
+  const pct = Math.max(0, Math.round(d * 100));
+  return `${pct}%`;
+}
+
+// Format ETA distance: "Now" / "1 min" / "12 min" / "Departed"
+export function formatEta(mins: number | null | undefined): string {
+  if (mins === null || mins === undefined || Number.isNaN(mins)) return "—";
+  const m = Math.round(mins);
+  if (m <= -2) return "Departed";
+  if (m <= 0) return "Now";
+  if (m === 1) return "1 min";
+  return `${m} min`;
+}
