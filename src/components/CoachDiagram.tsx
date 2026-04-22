@@ -280,7 +280,7 @@ function CoachCar({
           {isLadies ? "LDS" : "GEN"}
         </span>
         <span className="mt-0.5 font-mono text-[8px] tabular-nums text-foreground/70">
-          {Math.round(coach.density * 100)}%
+          {formatDensity(coach.density)}
         </span>
       </div>
 
