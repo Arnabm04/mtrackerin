@@ -32,6 +32,10 @@ export interface Train {
   overallCrowd: CrowdLevel;
   overallDensity: number;
   coaches: Coach[]; // length 12
+  // ETA per stop (HH:mm) in the train's travel direction; length === stations.length
+  stationEtas: string[];
+  // Minutes from "now" to each station; negative = passed; same length as stations
+  minutesToStation: number[];
 }
 
 export const LINES: MetroLine[] = [
