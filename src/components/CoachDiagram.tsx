@@ -8,6 +8,7 @@ import {
   CROWD_LABEL,
   CROWD_DESCRIPTION,
   getCrowdData,
+  formatDensity,
 } from "@/lib/metro-data";
 import { CrowdBadge } from "./CrowdDot";
 
@@ -103,7 +104,7 @@ export function CoachDiagram({
                 12-Coach Layout
               </h3>
               <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-                Train density {Math.round(train.overallDensity * 100)}%
+                Train density {formatDensity(train.overallDensity)}
               </span>
             </div>
 
@@ -179,14 +180,14 @@ export function CoachDiagram({
               <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
                 <span>Density</span>
                 <span className="tabular-nums text-foreground">
-                  {Math.round(sel.density * 100)}%
+                  {formatDensity(sel.density)}
                 </span>
               </div>
               <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-muted">
                 <div
                   className="h-full rounded-full transition-all"
                   style={{
-                    width: `${Math.round(sel.density * 100)}%`,
+                    width: `${Math.min(100, Math.round(sel.density * 100))}%`,
                     backgroundColor: COACH_FILL[sel.level],
                   }}
                 />
