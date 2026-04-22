@@ -25,6 +25,8 @@ export interface Train {
   departure: string; // HH:mm
   arrival: string;   // HH:mm at terminal
   direction: string; // "Towards X"
+  destination: string; // exact terminal station name (matches a station in the line)
+  currentStationIndex: number; // 0..stations.length-1, index along the train's travel direction
   platform: number;
   status: "On Time" | "Delayed" | "Boarding";
   overallCrowd: CrowdLevel;
@@ -134,12 +136,17 @@ export function generateTimetable(lineId: string): Train[] {
     const arrMins = hh * 60 + mm + travelMins;
     const arrival = `${String(Math.floor(arrMins / 60) % 24).padStart(2, "0")}:${String(arrMins % 60).padStart(2, "0")}`;
     const r = rand();
+    const destination = dirForward ? line.to : line.from;
+    // Pick a deterministic "current station" along the route (train mid-trip feel)
+    const currentStationIndex = Math.floor(rand() * (line.stations.length - 2)) + 1;
     trains.push({
       id: `${lineId}-${String(i + 1).padStart(2, "0")}`,
       lineId,
       departure: times[i],
       arrival,
       direction: `Towards ${dirForward ? line.to : line.from}`,
+      destination,
+      currentStationIndex,
       platform: dirForward ? 1 : 2,
       status: r < 0.12 ? "Delayed" : r < 0.3 ? "Boarding" : "On Time",
       overallCrowd: agg.level,
