@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Upload, X, Loader2, Sparkles } from "lucide-react";
 import {
   type Train,
   type CrowdLevel,
