@@ -81,6 +81,57 @@ export function CoachDiagram({
 
   const sel = coaches[selected];
 
+  function densityToLevel(d: number): CrowdLevel {
+    if (d < 0.4) return "low";
+    if (d < 0.72) return "mid";
+    return "high";
+  }
+
+  async function handleUpload(file: File) {
+    setAnalyzing(true);
+    setAnalysisError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/public/cv-analyze", { method: "POST", body: fd });
+      const json = (await res.json()) as {
+        normalized?: number;
+        score?: number;
+        count?: number;
+        occupancy?: number;
+        density?: string;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(json.error || `Analysis failed (${res.status})`);
+      const d = Math.min(1.25, Math.max(0.05, json.normalized ?? json.score ?? 0.5));
+      const level = densityToLevel(Math.min(1, d));
+      const next = coaches.slice();
+      next[selected] = { density: d, level };
+      setCoaches(next);
+      const meta = {
+        count: json.count ?? 0,
+        occupancy: json.occupancy ?? 0,
+        density: (json.density ?? "MEDIUM").toUpperCase(),
+      };
+      const nextMeta = { ...lastAnalysis, [selected]: meta };
+      setLastAnalysis(nextMeta);
+      // Persist override for this coach
+      try {
+        const raw = localStorage.getItem(`cv-overrides:${train.id}`);
+        const cache = raw ? JSON.parse(raw) : {};
+        cache[String(selected)] = { density: d, level, meta };
+        localStorage.setItem(`cv-overrides:${train.id}`, JSON.stringify(cache));
+      } catch {
+        /* ignore quota */
+      }
+    } catch (err) {
+      setAnalysisError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setAnalyzing(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 p-4 backdrop-blur-sm"
