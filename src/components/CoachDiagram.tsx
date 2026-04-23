@@ -34,12 +34,40 @@ export function CoachDiagram({
 }) {
   const [coaches, setCoaches] = useState<Coach[]>(train.coaches);
   const [selected, setSelected] = useState<number>(0);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [lastAnalysis, setLastAnalysis] = useState<
+    Record<number, { count: number; occupancy: number; density: string }>
+  >({});
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const data = await getCrowdData(train.id, train.coaches);
-      if (!cancelled) setCoaches(data.coaches);
+      if (cancelled) return;
+      // Hydrate any per-coach overrides previously stored from CV uploads
+      try {
+        const raw = localStorage.getItem(`cv-overrides:${train.id}`);
+        if (raw) {
+          const overrides = JSON.parse(raw) as Record<
+            string,
+            { density: number; level: CrowdLevel; meta: { count: number; occupancy: number; density: string } }
+          >;
+          const merged = data.coaches.map((c, i) => {
+            const o = overrides[String(i)];
+            return o ? { density: o.density, level: o.level } : c;
+          });
+          setCoaches(merged);
+          const metaMap: typeof lastAnalysis = {};
+          Object.entries(overrides).forEach(([k, v]) => (metaMap[Number(k)] = v.meta));
+          setLastAnalysis(metaMap);
+          return;
+        }
+      } catch {
+        /* ignore corrupted cache */
+      }
+      setCoaches(data.coaches);
     })();
     return () => {
       cancelled = true;
