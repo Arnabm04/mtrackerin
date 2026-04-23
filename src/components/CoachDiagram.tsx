@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Upload, X, Loader2, Sparkles } from "lucide-react";
 import {
   type Train,
   type CrowdLevel,
@@ -34,12 +34,40 @@ export function CoachDiagram({
 }) {
   const [coaches, setCoaches] = useState<Coach[]>(train.coaches);
   const [selected, setSelected] = useState<number>(0);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [lastAnalysis, setLastAnalysis] = useState<
+    Record<number, { count: number; occupancy: number; density: string }>
+  >({});
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const data = await getCrowdData(train.id, train.coaches);
-      if (!cancelled) setCoaches(data.coaches);
+      if (cancelled) return;
+      // Hydrate any per-coach overrides previously stored from CV uploads
+      try {
+        const raw = localStorage.getItem(`cv-overrides:${train.id}`);
+        if (raw) {
+          const overrides = JSON.parse(raw) as Record<
+            string,
+            { density: number; level: CrowdLevel; meta: { count: number; occupancy: number; density: string } }
+          >;
+          const merged = data.coaches.map((c, i) => {
+            const o = overrides[String(i)];
+            return o ? { density: o.density, level: o.level } : c;
+          });
+          setCoaches(merged);
+          const metaMap: typeof lastAnalysis = {};
+          Object.entries(overrides).forEach(([k, v]) => (metaMap[Number(k)] = v.meta));
+          setLastAnalysis(metaMap);
+          return;
+        }
+      } catch {
+        /* ignore corrupted cache */
+      }
+      setCoaches(data.coaches);
     })();
     return () => {
       cancelled = true;
@@ -52,6 +80,57 @@ export function CoachDiagram({
   );
 
   const sel = coaches[selected];
+
+  function densityToLevel(d: number): CrowdLevel {
+    if (d < 0.4) return "low";
+    if (d < 0.72) return "mid";
+    return "high";
+  }
+
+  async function handleUpload(file: File) {
+    setAnalyzing(true);
+    setAnalysisError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/public/cv-analyze", { method: "POST", body: fd });
+      const json = (await res.json()) as {
+        normalized?: number;
+        score?: number;
+        count?: number;
+        occupancy?: number;
+        density?: string;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(json.error || `Analysis failed (${res.status})`);
+      const d = Math.min(1.25, Math.max(0.05, json.normalized ?? json.score ?? 0.5));
+      const level = densityToLevel(Math.min(1, d));
+      const next = coaches.slice();
+      next[selected] = { density: d, level };
+      setCoaches(next);
+      const meta = {
+        count: json.count ?? 0,
+        occupancy: json.occupancy ?? 0,
+        density: (json.density ?? "MEDIUM").toUpperCase(),
+      };
+      const nextMeta = { ...lastAnalysis, [selected]: meta };
+      setLastAnalysis(nextMeta);
+      // Persist override for this coach
+      try {
+        const raw = localStorage.getItem(`cv-overrides:${train.id}`);
+        const cache = raw ? JSON.parse(raw) : {};
+        cache[String(selected)] = { density: d, level, meta };
+        localStorage.setItem(`cv-overrides:${train.id}`, JSON.stringify(cache));
+      } catch {
+        /* ignore quota */
+      }
+    } catch (err) {
+      setAnalysisError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setAnalyzing(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
 
   return (
     <div
@@ -208,6 +287,68 @@ export function CoachDiagram({
                     ? "Acceptable"
                     : "Try another coach"}
               </DetailRow>
+            </div>
+
+            {/* CV upload */}
+            <div className="mt-5 space-y-3 border-t border-border pt-4">
+              <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                <Sparkles className="h-3 w-3" />
+                Computer Vision
+              </div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleUpload(f);
+                }}
+              />
+              <button
+                onClick={() => fileRef.current?.click()}
+                disabled={analyzing}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium transition hover:bg-accent disabled:opacity-60"
+              >
+                {analyzing ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Analysing coach photo…
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-3.5 w-3.5" />
+                    Upload coach photo for CV analysis
+                  </>
+                )}
+              </button>
+              {analysisError && (
+                <p className="rounded-md border border-crowd-high/30 bg-crowd-high-soft px-2.5 py-1.5 text-[11px] text-crowd-high">
+                  {analysisError}
+                </p>
+              )}
+              {lastAnalysis[selected] && (
+                <div className="rounded-md border border-border bg-surface px-2.5 py-2 text-[11px] text-muted-foreground">
+                  <div className="flex items-center justify-between">
+                    <span>People detected</span>
+                    <span className="font-mono tabular-nums text-foreground">
+                      {lastAnalysis[selected].count}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between">
+                    <span>Pixel occupancy</span>
+                    <span className="font-mono tabular-nums text-foreground">
+                      {(lastAnalysis[selected].occupancy * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between">
+                    <span>YOLO label</span>
+                    <span className="font-mono text-foreground">
+                      {lastAnalysis[selected].density}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
