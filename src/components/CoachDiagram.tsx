@@ -138,7 +138,7 @@ export function CoachDiagram({
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-5xl overflow-hidden rounded-2xl border border-border bg-surface"
+        className="relative flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-border bg-surface"
         style={{ boxShadow: "var(--shadow-elevated)" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -147,7 +147,7 @@ export function CoachDiagram({
           className="h-1.5 w-full"
           style={{ backgroundColor: line.color }}
         />
-        <div className="flex items-start justify-between border-b border-border bg-surface-elevated p-6">
+        <div className="flex flex-shrink-0 items-start justify-between border-b border-border bg-surface-elevated p-6">
           <div className="space-y-1">
             <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-muted-foreground">
               <span
@@ -175,7 +175,7 @@ export function CoachDiagram({
         </div>
 
         {/* Body */}
-        <div className="grid gap-6 p-6 md:grid-cols-[1fr_280px]">
+        <div className="grid flex-1 gap-6 overflow-y-auto p-6 md:grid-cols-[1fr_280px]">
           {/* Train diagram */}
           <div>
             <div className="mb-3 flex items-center justify-between">
